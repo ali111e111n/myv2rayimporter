@@ -34,6 +34,8 @@ MAX_DELAY = int(os.getenv("MAX_DELAY", "3000"))         # کانفیگ‌های 
 MAX_CONFIGS = int(os.getenv("MAX_CONFIGS", "30"))       # فقط این تعداد از بهترین‌ها
 KEEP_IR_HOSTS = os.getenv("KEEP_IR_HOSTS", "1") == "1"  # نگه‌داشتن سرورهای .ir که از خارج تست‌پذیر نیستند
 MAX_IR = int(os.getenv("MAX_IR", "10"))
+POOL_MAX = int(os.getenv("POOL_MAX", "120"))            # pool.txt برای تست روی گوشی
+POOL_MAX_IR = int(os.getenv("POOL_MAX_IR", "40"))
 
 PROTOCOLS = ("vless", "vmess", "trojan", "ss", "hysteria2", "hy2", "tuic")
 CONFIG_RE = re.compile(r"(?:%s)://[^\s<>\"'`]+" % "|".join(PROTOCOLS))
@@ -190,6 +192,13 @@ def main():
                   if u[0] not in passed and u[1].lower().endswith(".ir")]
             final += ir[:MAX_IR]
             print(f"[+] kept untested .ir relays: {len(ir[:MAX_IR])}")
+        else:
+            ir = []
+        # pool.txt: لیست بزرگ برای تست روی گوشی (Termux) — همه‌ی زنده‌ها + سرورهای .ir
+        pool = [t[0] for t in tested][:POOL_MAX] + [x[0] for x in ir][:POOL_MAX_IR]
+        with open("pool.txt", "w", encoding="utf-8") as f:
+            f.write("\n".join(pool) + "\n")
+        print(f"[+] pool.txt: {len(pool)} configs")
     else:
         if TCP_CHECK and unique:
             with ThreadPoolExecutor(max_workers=50) as ex:
