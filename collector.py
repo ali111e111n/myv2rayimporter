@@ -34,7 +34,7 @@ MAX_DELAY = int(os.getenv("MAX_DELAY", "3000"))         # کانفیگ‌های 
 MAX_CONFIGS = int(os.getenv("MAX_CONFIGS", "30"))       # فقط این تعداد از بهترین‌ها
 KEEP_IR_HOSTS = os.getenv("KEEP_IR_HOSTS", "1") == "1"  # نگه‌داشتن سرورهای .ir که از خارج تست‌پذیر نیستند
 MAX_IR = int(os.getenv("MAX_IR", "10"))
-POOL_MAX = int(os.getenv("POOL_MAX", "120"))            # pool.txt برای تست روی گوشی
+POOL_MAX = int(os.getenv("POOL_MAX", "300"))            # pool.txt برای تست روی گوشی
 POOL_MAX_IR = int(os.getenv("POOL_MAX_IR", "40"))
 
 PROTOCOLS = ("vless", "vmess", "trojan", "ss", "hysteria2", "hy2", "tuic")
