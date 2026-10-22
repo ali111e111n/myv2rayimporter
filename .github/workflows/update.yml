@@ -2,8 +2,8 @@ name: Update subscription
 
 on:
   schedule:
-    - cron: "17 */2 * * *"   # هر ۲ ساعت
-  workflow_dispatch:          # دکمه اجرای دستی
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -18,11 +18,21 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Collect configs
+      - name: Download xray-knife
+        run: |
+          curl -sSL -o xk.zip https://github.com/lilendian0x00/xray-knife/releases/latest/download/Xray-knife-linux-64.zip
+          unzip -o -q xk.zip xray-knife
+          chmod +x xray-knife
+          rm xk.zip
+
+      - name: Collect and test configs
         env:
-          CHANNELS: "meliproxyy"      # چند کانال؟ با کاما جدا کنید: "meliproxyy,channel2"
+          CHANNELS: "meliproxyy"
           MAX_AGE_HOURS: "48"
-          TCP_CHECK: "1"
+          MAX_CONFIGS: "30"
+          MAX_DELAY: "3000"
+          KEEP_IR_HOSTS: "1"
+          MAX_IR: "10"
         run: python collector.py
 
       - name: Commit
