@@ -2,8 +2,8 @@ name: Update subscription
 
 on:
   schedule:
-    - cron: "17 */2 * * *"
-  workflow_dispatch:
+    - cron: "17 */2 * * *"   # هر ۲ ساعت
+  workflow_dispatch:          # دکمه اجرای دستی
 
 permissions:
   contents: write
@@ -20,7 +20,7 @@ jobs:
 
       - name: Collect configs
         env:
-          CHANNELS: "meliproxyy"
+          CHANNELS: "meliproxyy"      # چند کانال؟ با کاما جدا کنید: "meliproxyy,channel2"
           MAX_AGE_HOURS: "48"
           TCP_CHECK: "1"
         run: python collector.py
