@@ -8,11 +8,13 @@
 """
 
 import base64
+import csv
 import html
 import json
 import os
 import re
 import socket
+import subprocess
 import sys
 import urllib.parse
 import urllib.request
@@ -26,6 +28,12 @@ MAX_PAGES = int(os.getenv("MAX_PAGES", "8"))            # هر صفحه حدود
 TCP_CHECK = os.getenv("TCP_CHECK", "1") == "1"          # حذف سرورهایی که اصلاً پورتشان باز نیست
 TCP_TIMEOUT = float(os.getenv("TCP_TIMEOUT", "3"))
 REMARK_PREFIX = os.getenv("REMARK_PREFIX", "meli")
+REAL_TEST = os.getenv("REAL_TEST", "1") == "1"          # تست واقعی با xray-knife
+XRAY_KNIFE = os.getenv("XRAY_KNIFE", "./xray-knife")
+MAX_DELAY = int(os.getenv("MAX_DELAY", "3000"))         # کانفیگ‌های کندتر از این (ms) حذف
+MAX_CONFIGS = int(os.getenv("MAX_CONFIGS", "30"))       # فقط این تعداد از بهترین‌ها
+KEEP_IR_HOSTS = os.getenv("KEEP_IR_HOSTS", "1") == "1"  # نگه‌داشتن سرورهای .ir که از خارج تست‌پذیر نیستند
+MAX_IR = int(os.getenv("MAX_IR", "10"))
 
 PROTOCOLS = ("vless", "vmess", "trojan", "ss", "hysteria2", "hy2", "tuic")
 CONFIG_RE = re.compile(r"(?:%s)://[^\s<>\"'`]+" % "|".join(PROTOCOLS))
@@ -102,6 +110,43 @@ def tcp_ok(host: str, port: int) -> bool:
         return False
 
 
+def real_test(configs: list[str]):
+    """هر کانفیگ را واقعاً وصل می‌کند و یک درخواست HTTP از داخلش می‌فرستد.
+    خروجی: [(cfg, delay_ms, location)] مرتب از سریع به کند، یا None اگر ابزار در دسترس نبود."""
+    if not os.path.isfile(XRAY_KNIFE):
+        print(f"[!] {XRAY_KNIFE} not found; falling back to TCP check", file=sys.stderr)
+        return None
+    with open("candidates.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(configs) + "\n")
+    cmd = [XRAY_KNIFE, "http", "-f", "candidates.txt", "-o", "results.csv", "-x", "csv",
+           "-t", "50", "-d", str(MAX_DELAY), "--prescan", "--quiet"]
+    try:
+        # کد خروج 3 یعنی «هیچ کانفیگی رد نشد» و خطا نیست
+        subprocess.run(cmd, timeout=1500, check=False)
+    except subprocess.TimeoutExpired:
+        print("[!] real test timed out", file=sys.stderr)
+    if not os.path.isfile("results.csv"):
+        return None
+
+    allowed = set(configs)
+    rows = []
+    with open("results.csv", encoding="utf-8", newline="") as f:
+        for r in csv.DictReader(f):
+            link = r.get("link", "")
+            if link not in allowed or r.get("status") not in ("passed", "semi-passed"):
+                continue
+            try:
+                delay = int(float(r.get("delay") or -1))
+            except ValueError:
+                continue
+            if 0 < delay <= MAX_DELAY:
+                loc = (r.get("location") or "").strip()
+                loc = loc if re.fullmatch(r"[A-Za-z]{2}", loc) else None
+                rows.append((link, delay, loc.upper() if loc else None))
+    rows.sort(key=lambda x: x[1])
+    return rows
+
+
 def rename(cfg: str, name: str) -> str:
     if cfg.startswith("vmess://"):
         raw = cfg[8:].split("#")[0]
@@ -127,17 +172,42 @@ def main():
         unique.append((cfg, p[1], p[2]))
     print(f"[+] unique: {len(unique)}")
 
-    if TCP_CHECK and unique:
-        with ThreadPoolExecutor(max_workers=50) as ex:
-            alive = list(ex.map(lambda x: tcp_ok(x[1], x[2]), unique))
-        unique = [u for u, ok in zip(unique, alive) if ok]
-        print(f"[+] reachable (TCP): {len(unique)}")
+    # ---- تست واقعی (اتصال کامل از داخل تونل) ----
+    tested = real_test([u[0] for u in unique]) if REAL_TEST and unique else None
+
+    if tested == []:
+        print("[!] هیچ کانفیگی تست را رد نکرد؛ لیست قبلی دست نخورد.")
+        return
+
+    if tested is not None:
+        # tested: لیست (cfg, delay_ms, location) مرتب‌شده از سریع به کند
+        print(f"[+] passed real test: {len(tested)}")
+        final = tested[:MAX_CONFIGS]
+        if KEEP_IR_HOSTS:
+            # سرورهای داخلی (.ir) معمولاً از خارج ایران جواب نمی‌دهند ولی در ایران کار می‌کنند
+            passed = {t[0] for t in tested}
+            ir = [(u[0], None, "IR") for u in unique
+                  if u[0] not in passed and u[1].lower().endswith(".ir")]
+            final += ir[:MAX_IR]
+            print(f"[+] kept untested .ir relays: {len(ir[:MAX_IR])}")
+    else:
+        if TCP_CHECK and unique:
+            with ThreadPoolExecutor(max_workers=50) as ex:
+                alive = list(ex.map(lambda x: tcp_ok(x[1], x[2]), unique))
+            unique = [u for u, ok in zip(unique, alive) if ok]
+            print(f"[+] reachable (TCP): {len(unique)}")
+        final = [(u[0], None, None) for u in unique[:MAX_CONFIGS]]
 
     out = []
-    for i, (cfg, _, _) in enumerate(unique, 1):
+    for i, (cfg, delay, loc) in enumerate(final, 1):
         proto = cfg.split("://", 1)[0]
+        parts = [f"{i:02d}", proto]
+        if loc:
+            parts.append(loc)
+        if delay:
+            parts.append(f"{delay}ms")
         try:
-            out.append(rename(cfg, f"{REMARK_PREFIX}-{i:03d}-{proto}"))
+            out.append(rename(cfg, f"{REMARK_PREFIX}-" + "-".join(parts)))
         except Exception:
             out.append(cfg)
 
