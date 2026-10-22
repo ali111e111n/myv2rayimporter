@@ -15,7 +15,8 @@ if [ "$(uname -m)" != "aarch64" ]; then
 fi
 
 echo "→ نصب پیش‌نیازها..."
-pkg update -y
+# ارتقای کامل لازم است؛ ارتقای ناقص باعث خطای «CANNOT LINK EXECUTABLE curl» می‌شود
+yes | pkg upgrade -y -o Dpkg::Options::="--force-confold"
 pkg install -y python curl unzip termux-api
 
 echo "→ دریافت xray-knife (حدود ۲۵ مگابایت)..."
